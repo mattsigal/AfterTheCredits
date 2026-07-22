@@ -34,14 +34,14 @@ jobs:
       - name: Build Android Release APK
         run: flutter build apk --release
 
-      - name: Build Unsigned iOS IPA
+      - name: Build iOS App & Package IPA
         run: |
-          flutter build ipa --no-codesign
-          cd build/ios/archive/Runner.xcarchive/Products/Applications
-          mkdir Payload
+          flutter build ios --release --no-codesign
+          cd build/ios/iphoneos
+          mkdir -p Payload
           cp -r Runner.app Payload/
-          zip -r ../../../../../AfterTheCredits-v1.0.0.ipa Payload
-          cd ../../../../../
+          zip -r ../../../AfterTheCredits-v1.0.0.ipa Payload
+          cd ../../../
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
