@@ -2,6 +2,7 @@ import 'package:html/parser.dart' as hp;
 import 'package:http/http.dart' as http;
 import '../models/movie_model.dart';
 import '../database/database_helper.dart';
+import '../../utils/title_formatter.dart';
 
 class AfterCreditsSearchResult {
   final String title;
@@ -15,6 +16,8 @@ class AfterCreditsSearchResult {
     this.posterUrl,
     this.snippet,
   });
+
+  String get displayTitle => TitleFormatter.formatDisplayTitle(title);
 }
 
 class AfterCreditsScraper {

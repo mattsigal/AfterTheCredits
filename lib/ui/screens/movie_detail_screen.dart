@@ -6,18 +6,25 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../data/models/movie_model.dart';
 import '../../data/services/aftercredits_scraper.dart';
 import '../../providers/app_provider.dart';
+import '../../utils/title_formatter.dart';
+import '../widgets/letterboxd_log_dialog.dart';
 import '../widgets/stinger_badge.dart';
+import 'settings_screen.dart';
+
+import '../../data/models/letterboxd_item.dart';
 
 class MovieDetailScreen extends StatefulWidget {
   final String movieUrl;
   final String? initialTitle;
   final String? initialPosterUrl;
+  final LetterboxdItem? existingLetterboxdItem;
 
   const MovieDetailScreen({
     super.key,
     required this.movieUrl,
     this.initialTitle,
     this.initialPosterUrl,
+    this.existingLetterboxdItem,
   });
 
   @override
@@ -53,9 +60,90 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
 
   Future<void> _launchUrlStr(String? urlStr) async {
     if (urlStr == null || urlStr.isEmpty) return;
-    final uri = Uri.parse(urlStr);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    var formattedUrl = urlStr.trim();
+    if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
+      formattedUrl = 'https://$formattedUrl';
+    }
+    final uri = Uri.parse(formattedUrl);
+    try {
+      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched) {
+        await launchUrl(uri, mode: LaunchMode.platformDefault);
+      }
+    } catch (_) {
+      try {
+        await launchUrl(uri, mode: LaunchMode.platformDefault);
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _showLetterboxdLogDialog() async {
+    final provider = Provider.of<AppProvider>(context, listen: false);
+    if (!provider.isLetterboxdAuthenticated) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Row(
+            children: const [
+              Icon(Icons.lock_outline, color: Colors.amber),
+              SizedBox(width: 8),
+              Text('Authentication Required'),
+            ],
+          ),
+          content: const Text(
+            'You must configure your Letterboxd username and Cloudflare session cookies in Settings before sending ratings or reviews.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF00E676),
+                foregroundColor: Colors.black,
+              ),
+              icon: const Icon(Icons.settings),
+              label: const Text('Go to Settings'),
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                );
+              },
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final title = _movie?.displayTitle ??
+        TitleFormatter.formatDisplayTitle(widget.initialTitle ?? 'Movie');
+    final poster = _movie?.posterUrl ?? widget.initialPosterUrl;
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (_) => LetterboxdLogDialog(
+        filmTitle: title,
+        posterUrl: poster,
+        existingItem: widget.existingLetterboxdItem,
+      ),
+    );
+
+    if (result == true && mounted) {
+      provider.refreshRecentlyWatched();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            widget.existingLetterboxdItem != null
+                ? 'Updated Letterboxd entry for "$title"!'
+                : 'Logged "$title" to Letterboxd!',
+          ),
+          backgroundColor: const Color(0xFF00E676),
+        ),
+      );
     }
   }
 
@@ -95,12 +183,32 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
     }
   }
 
+  Future<void> _handleFullRefresh() async {
+    final provider = Provider.of<AppProvider>(context, listen: false);
+    setState(() => _isLoading = true);
+    await Future.wait([
+      _loadMovie(forceRefresh: true),
+      if (provider.letterboxdUsername.isNotEmpty)
+        provider.refreshRecentlyWatched(),
+    ]);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Refreshed AfterCredits and Letterboxd data!'),
+          duration: Duration(seconds: 2),
+          backgroundColor: Color(0xFF00E676),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cardBg = Theme.of(context).cardColor;
 
-    final displayTitle = _movie?.title ?? widget.initialTitle ?? 'Movie Details';
+    final displayTitle = _movie?.displayTitle ??
+        TitleFormatter.formatDisplayTitle(widget.initialTitle ?? 'Movie Details');
     final posterUrl = _movie?.posterUrl ?? widget.initialPosterUrl;
 
     return Scaffold(
@@ -110,7 +218,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Force Refresh Data',
-            onPressed: () => _loadMovie(forceRefresh: true),
+            onPressed: _handleFullRefresh,
           ),
           IconButton(
             icon: const Icon(Icons.calendar_month),
@@ -210,37 +318,61 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                       const SizedBox(height: 16),
 
                       // Links (Official, Letterboxd, IMDb)
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            if (_movie!.officialSiteUrl != null)
+                      Center(
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              if (_movie!.officialSiteUrl != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: OutlinedButton.icon(
+                                    icon: const Icon(Icons.public, size: 16),
+                                    label: const Text('Official'),
+                                    onPressed: () => _launchUrlStr(_movie!.officialSiteUrl),
+                                  ),
+                                ),
                               Padding(
                                 padding: const EdgeInsets.only(right: 8),
                                 child: OutlinedButton.icon(
-                                  icon: const Icon(Icons.public, size: 16),
-                                  label: const Text('Official'),
-                                  onPressed: () => _launchUrlStr(_movie!.officialSiteUrl),
+                                  icon: const Icon(Icons.movie_outlined, size: 16),
+                                  label: const Text('Letterboxd'),
+                                  onPressed: () {
+                                    final lbUrl =
+                                        'https://letterboxd.com/search/${Uri.encodeComponent(displayTitle)}/';
+                                    _launchUrlStr(lbUrl);
+                                  },
                                 ),
                               ),
-                            Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: OutlinedButton.icon(
-                                icon: const Icon(Icons.movie_outlined, size: 16),
-                                label: const Text('Letterboxd'),
-                                onPressed: () {
-                                  final lbUrl = 'https://letterboxd.com/search/${Uri.encodeComponent(_movie!.title)}/';
-                                  _launchUrlStr(lbUrl);
-                                },
-                              ),
-                            ),
-                            if (_movie!.imdbUrl != null)
-                              OutlinedButton.icon(
-                                icon: const Icon(Icons.movie_creation, size: 16),
-                                label: const Text('IMDb'),
-                                onPressed: () => _launchUrlStr(_movie!.imdbUrl),
-                              ),
-                          ],
+                              if (_movie!.imdbUrl != null)
+                                OutlinedButton.icon(
+                                  icon: const Icon(Icons.movie_creation, size: 16),
+                                  label: const Text('IMDb'),
+                                  onPressed: () => _launchUrlStr(_movie!.imdbUrl),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Centered Send / Update Letterboxd Rating Button
+                      Center(
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.rate_review, size: 18),
+                          label: Text(
+                            widget.existingLetterboxdItem != null
+                                ? 'Update Letterboxd Entry'
+                                : 'Send Letterboxd Rating',
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF00E676),
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          ),
+                          onPressed: _showLetterboxdLogDialog,
                         ),
                       ),
                       const SizedBox(height: 20),
@@ -338,10 +470,174 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                             ],
                           ),
                         ),
+                      const SizedBox(height: 20),
+
+                      // 3. Letterboxd Review & Rating Summary Card
+                      _buildLetterboxdSummaryCard(),
                       const SizedBox(height: 30),
                     ],
                   ),
                 ),
+    );
+  }
+
+  Widget _buildLetterboxdSummaryCard() {
+    final item = widget.existingLetterboxdItem;
+    const accentGreen = Color(0xFF00E676);
+    final cardBg = Theme.of(context).cardColor;
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: item != null ? accentGreen.withValues(alpha: 0.5) : Colors.grey.shade800,
+          width: 1.5,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Card Header
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: const BoxDecoration(
+              color: Color(0xFF1E252C),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(10)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.movie_creation_outlined, color: accentGreen, size: 20),
+                const SizedBox(width: 10),
+                const Text(
+                  'LETTERBOXD ACTIVITY',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.8,
+                    color: accentGreen,
+                  ),
+                ),
+                const Spacer(),
+                if (item != null)
+                  InkWell(
+                    onTap: _showLetterboxdLogDialog,
+                    child: Row(
+                      children: const [
+                        Icon(Icons.edit, size: 14, color: Colors.grey),
+                        SizedBox(width: 4),
+                        Text(
+                          'Edit',
+                          style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: item != null
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Date & Rating Row
+                      Row(
+                        children: [
+                          if (item.watchedDate != null) ...[
+                            Icon(Icons.calendar_today, size: 14, color: Colors.grey.shade400),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Watched ${DateFormat('d MMM yyyy').format(item.watchedDate!)}',
+                              style: TextStyle(fontSize: 13, color: Colors.grey.shade300, fontWeight: FontWeight.w500),
+                            ),
+                          ],
+                          const Spacer(),
+                          if (item.memberRating != null && item.memberRating! > 0) ...[
+                            Row(
+                              children: List.generate(5, (idx) {
+                                final starVal = (idx + 1).toDouble();
+                                IconData icon;
+                                if (item.memberRating! >= starVal) {
+                                  icon = Icons.star;
+                                } else if (item.memberRating! >= starVal - 0.5) {
+                                  icon = Icons.star_half;
+                                } else {
+                                  icon = Icons.star_border;
+                                }
+                                return Icon(icon, color: accentGreen, size: 18);
+                              }),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              '${item.memberRating! % 1 == 0 ? item.memberRating!.toInt() : item.memberRating}/5',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: accentGreen),
+                            ),
+                          ],
+                        ],
+                      ),
+
+                      // Review Text Box (if present)
+                      if (item.review != null && item.review!.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF181D23),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey.shade800),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                '"',
+                                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: accentGreen, height: 0.8),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  item.review!,
+                                  style: const TextStyle(fontSize: 13, height: 1.4, fontStyle: FontStyle.italic, color: Colors.white),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Have you watched this movie? Log your watch date, star rating, and review directly to your Letterboxd account.',
+                        style: TextStyle(fontSize: 13, color: Colors.grey, height: 1.4),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: accentGreen,
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          ),
+                          icon: const Icon(Icons.add, size: 18),
+                          label: const Text('Log or Rate on Letterboxd', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                          onPressed: _showLetterboxdLogDialog,
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        ],
+      ),
     );
   }
 

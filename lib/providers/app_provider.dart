@@ -9,6 +9,10 @@ import '../data/services/letterboxd_service.dart';
 class AppProvider with ChangeNotifier {
   bool _isDarkMode = true;
   String _letterboxdUsername = '';
+  String _letterboxdRawCookies = '';
+  String _letterboxdUserAgent = '';
+  bool _isLetterboxdVerified = false;
+  String _letterboxdAuthError = '';
 
   List<UpcomingMovieModel> _upcomingMovies = [];
   List<LetterboxdItem> _recentlyWatched = [];
@@ -21,6 +25,11 @@ class AppProvider with ChangeNotifier {
 
   bool get isDarkMode => _isDarkMode;
   String get letterboxdUsername => _letterboxdUsername;
+  String get letterboxdRawCookies => _letterboxdRawCookies;
+  String get letterboxdUserAgent => _letterboxdUserAgent;
+  bool get isLetterboxdAuthenticated =>
+      _isLetterboxdVerified && _letterboxdUsername.isNotEmpty && _letterboxdRawCookies.isNotEmpty;
+  String get letterboxdAuthError => _letterboxdAuthError;
   List<UpcomingMovieModel> get upcomingMovies => _upcomingMovies;
   List<LetterboxdItem> get recentlyWatched => _recentlyWatched;
   bool get isSearching => _isSearching;
@@ -37,6 +46,9 @@ class AppProvider with ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _isDarkMode = prefs.getBool('is_dark_mode') ?? true;
     _letterboxdUsername = prefs.getString('letterboxd_username') ?? '';
+    _letterboxdRawCookies = prefs.getString('letterboxd_raw_cookies') ?? '';
+    _letterboxdUserAgent = prefs.getString('letterboxd_user_agent') ?? '';
+    _isLetterboxdVerified = prefs.getBool('is_letterboxd_verified') ?? false;
     notifyListeners();
 
     if (_letterboxdUsername.isNotEmpty) {
@@ -51,18 +63,104 @@ class AppProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setLetterboxdUsername(String username) async {
-    _letterboxdUsername = username.trim();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('letterboxd_username', _letterboxdUsername);
-    notifyListeners();
+  Future<bool> verifyAndSaveLetterboxdCredentials({
+    required String username,
+    required String rawCookies,
+    String? userAgent,
+  }) async {
+    final cleanUser = username.trim();
+    final cleanCookies = rawCookies.trim();
+    final cleanUA = userAgent?.trim() ?? '';
 
-    if (_letterboxdUsername.isNotEmpty) {
-      refreshRecentlyWatched();
-    } else {
+    if (cleanUser.isEmpty) {
+      _letterboxdUsername = '';
+      _letterboxdRawCookies = '';
+      _letterboxdUserAgent = '';
+      _isLetterboxdVerified = false;
+      _letterboxdAuthError = '';
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('letterboxd_username', '');
+      await prefs.setString('letterboxd_raw_cookies', '');
+      await prefs.setString('letterboxd_user_agent', '');
+      await prefs.setBool('is_letterboxd_verified', false);
       _recentlyWatched = [];
       notifyListeners();
+      return true;
     }
+
+    if (cleanCookies.isEmpty) {
+      // Username only (RSS feed mode)
+      _letterboxdUsername = cleanUser;
+      _letterboxdRawCookies = '';
+      _letterboxdUserAgent = cleanUA;
+      _isLetterboxdVerified = false;
+      _letterboxdAuthError = '';
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('letterboxd_username', cleanUser);
+      await prefs.setString('letterboxd_raw_cookies', '');
+      await prefs.setString('letterboxd_user_agent', cleanUA);
+      await prefs.setBool('is_letterboxd_verified', false);
+      refreshRecentlyWatched();
+      notifyListeners();
+      return true;
+    }
+
+    final auth = await LetterboxdService.verifyCredentials(
+      username: cleanUser,
+      rawCookies: cleanCookies,
+      userAgent: cleanUA,
+    );
+    final prefs = await SharedPreferences.getInstance();
+
+    if (auth.success) {
+      _letterboxdUsername = cleanUser;
+      _letterboxdRawCookies = cleanCookies;
+      _letterboxdUserAgent = cleanUA;
+      _isLetterboxdVerified = true;
+      _letterboxdAuthError = '';
+      await prefs.setString('letterboxd_username', cleanUser);
+      await prefs.setString('letterboxd_raw_cookies', cleanCookies);
+      await prefs.setString('letterboxd_user_agent', cleanUA);
+      await prefs.setBool('is_letterboxd_verified', true);
+      refreshRecentlyWatched();
+      notifyListeners();
+      return true;
+    } else {
+      _letterboxdUsername = cleanUser;
+      _letterboxdRawCookies = '';
+      _letterboxdUserAgent = cleanUA;
+      _isLetterboxdVerified = false;
+      _letterboxdAuthError = auth.errorMessage ?? 'Invalid session cookies.';
+      await prefs.setString('letterboxd_username', cleanUser);
+      await prefs.setString('letterboxd_raw_cookies', '');
+      await prefs.setString('letterboxd_user_agent', cleanUA);
+      await prefs.setBool('is_letterboxd_verified', false);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<void> clearLetterboxdCredentials() async {
+    _letterboxdUsername = '';
+    _letterboxdRawCookies = '';
+    _letterboxdUserAgent = '';
+    _isLetterboxdVerified = false;
+    _letterboxdAuthError = '';
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('letterboxd_username');
+    await prefs.remove('letterboxd_raw_cookies');
+    await prefs.remove('letterboxd_user_agent');
+    await prefs.remove('is_letterboxd_verified');
+    refreshRecentlyWatched();
+    notifyListeners();
+  }
+
+  Future<void> setLetterboxdUsername(String username) async {
+    await verifyAndSaveLetterboxdCredentials(
+      username: username,
+      rawCookies: _letterboxdRawCookies,
+      userAgent: _letterboxdUserAgent,
+    );
   }
 
   Future<void> loadUpcomingMovies() async {

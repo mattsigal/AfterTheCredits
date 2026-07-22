@@ -1,3 +1,5 @@
+import '../../utils/title_formatter.dart';
+
 class UpcomingMovieModel {
   final int? id;
   final String movieUrl;
@@ -18,6 +20,8 @@ class UpcomingMovieModel {
     this.afterCreditsYesNo,
     this.notes,
   });
+
+  String get displayTitle => TitleFormatter.formatDisplayTitle(movieTitle);
 
   bool get hasStingerContent =>
       (duringCreditsYesNo == true) || (afterCreditsYesNo == true);

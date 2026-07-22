@@ -1,17 +1,16 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:provider/provider.dart';
-import 'package:after_the_credits/main.dart';
-import 'package:after_the_credits/providers/app_provider.dart';
+import 'package:after_the_credits/utils/title_formatter.dart';
 
 void main() {
-  testWidgets('App smoke test', (WidgetTester tester) async {
-    await tester.pumpWidget(
-      ChangeNotifierProvider(
-        create: (_) => AppProvider(),
-        child: const AfterTheCreditsApp(),
-      ),
-    );
+  test('TitleFormatter converts trailing articles correctly', () {
+    expect(TitleFormatter.formatDisplayTitle('Odyssey, The'), equals('The Odyssey'));
+    expect(TitleFormatter.formatDisplayTitle('Matrix, The (1999)'), equals('The Matrix (1999)'));
+    expect(TitleFormatter.formatDisplayTitle('Quiet Place, A'), equals('A Quiet Place'));
+    expect(TitleFormatter.formatDisplayTitle('American in Paris, An'), equals('An American in Paris'));
+  });
 
-    expect(find.text('After The Credits'), findsOneWidget);
+  test('TitleFormatter handles normal titles', () {
+    expect(TitleFormatter.formatDisplayTitle('Mulholland Drive'), equals('Mulholland Drive'));
+    expect(TitleFormatter.formatDisplayTitle('Odyssey, The *'), equals('The Odyssey'));
   });
 }

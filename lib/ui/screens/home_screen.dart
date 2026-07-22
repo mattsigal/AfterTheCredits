@@ -111,7 +111,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Padding(
                     padding: const EdgeInsets.all(16),
                     child: Text(
-                      'No movies found for "${provider.searchQuery}".',
+                      'No AfterCredits.com entry found for "${provider.searchQuery}".',
                       style: TextStyle(color: Colors.grey.shade500),
                     ),
                   )
@@ -139,7 +139,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 )
                               : const Icon(Icons.movie, size: 30),
                           title: Text(
-                            item.title,
+                            item.displayTitle,
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                           subtitle: item.snippet != null
@@ -374,7 +374,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 6),
             Text(
-              movie.movieTitle,
+              movie.displayTitle,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
@@ -410,6 +410,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 movieUrl: item.afterCreditsPageUrl!,
                 initialTitle: item.filmTitle,
                 initialPosterUrl: item.posterUrl,
+                existingLetterboxdItem: item,
               ),
             ),
           );
@@ -428,6 +429,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     movieUrl: match.url,
                     initialTitle: item.filmTitle,
                     initialPosterUrl: item.posterUrl,
+                    existingLetterboxdItem: item,
                   ),
                 ),
               );
@@ -475,22 +477,37 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 6),
             Text(
-              item.filmTitle,
+              item.displayTitle,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
             ),
-            if (item.memberRating != null)
-              Row(
-                children: [
+            Row(
+              children: [
+                if (item.memberRating != null) ...[
                   const Icon(Icons.star, size: 12, color: Colors.amber),
                   const SizedBox(width: 3),
                   Text(
-                    '${item.memberRating}★',
+                    '${item.memberRating}',
                     style: const TextStyle(fontSize: 11, color: Colors.grey),
                   ),
                 ],
-              ),
+                if (item.memberRating != null && item.watchedDate != null) ...[
+                  const SizedBox(width: 4),
+                  const Text('•', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                  const SizedBox(width: 4),
+                ],
+                if (item.watchedDate != null)
+                  Expanded(
+                    child: Text(
+                      DateFormat('MMM d, yyyy').format(item.watchedDate!),
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+            ),
           ],
         ),
       ),
