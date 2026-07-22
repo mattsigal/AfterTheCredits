@@ -1,6 +1,6 @@
 # After The Credits
 
-A clean, personalized Android mobile application for searching, scheduling upcoming theatre visits, and viewing post-credits/mid-credits stinger data alongside Letterboxd activity.
+A personalized Android mobile application for searching, scheduling upcoming theatre visits, and viewing post-credits/mid-credits stinger data alongside Letterboxd activity.
 
 ---
 
