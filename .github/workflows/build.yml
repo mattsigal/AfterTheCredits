@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    name: Build Android APK & iOS IPA
-    runs-on: macos-latest
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
@@ -24,7 +24,6 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.29.0'
           channel: 'stable'
           cache: true
 
@@ -33,6 +32,31 @@ jobs:
 
       - name: Build Android Release APK
         run: flutter build apk --release
+
+      - name: Upload Android Release Asset
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: build/app/outputs/flutter-apk/app-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-ios:
+    name: Build iOS IPA
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
 
       - name: Build iOS App & Package IPA
         run: |
@@ -43,12 +67,10 @@ jobs:
           zip -r ../../../AfterTheCredits-v1.0.0.ipa Payload
           cd ../../../
 
-      - name: Upload Release Assets
+      - name: Upload iOS Release Asset
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: |
-            build/app/outputs/flutter-apk/app-release.apk
-            AfterTheCredits-v1.0.0.ipa
+          files: AfterTheCredits-v1.0.0.ipa
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
