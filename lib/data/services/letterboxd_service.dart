@@ -555,14 +555,79 @@ class LetterboxdService {
     return null;
   }
 
+  /// Resolves the exact Letterboxd film page URL for a title and optional year
+  static Future<String> resolveFilmUrl(String title, {String? year}) async {
+    final cleanTitle = title.replaceAll(RegExp(r'\s*\(\d{4}\)\s*'), ' ').trim();
+    final slugFromTitle = cleanTitle
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+        .replaceAll(RegExp(r'^-+|-+$'), '');
+
+    // Extract year from title if not explicitly passed
+    final yearMatch = RegExp(r'\((\d{4})\)').firstMatch(title);
+    final effectiveYear = year ?? yearMatch?.group(1);
+
+    if (effectiveYear != null && effectiveYear.isNotEmpty) {
+      final titleYearSlug = '$slugFromTitle-$effectiveYear';
+      try {
+        final url = 'https://letterboxd.com/film/$titleYearSlug/';
+        final res = await http.get(
+          Uri.parse(url),
+          headers: {'User-Agent': _defaultUserAgent},
+        );
+        if (res.statusCode == 200) {
+          return url;
+        }
+      } catch (_) {}
+    }
+
+    try {
+      final url = 'https://letterboxd.com/film/$slugFromTitle/';
+      final res = await http.get(
+        Uri.parse(url),
+        headers: {'User-Agent': _defaultUserAgent},
+      );
+      if (res.statusCode == 200) {
+        return url;
+      }
+    } catch (_) {}
+
+    // Search fallback
+    try {
+      final searchUri = Uri.parse('https://letterboxd.com/search/film/${Uri.encodeComponent(cleanTitle)}/');
+      final searchRes = await http.get(searchUri, headers: {'User-Agent': _defaultUserAgent});
+      if (searchRes.statusCode == 200) {
+        final doc = hp.parse(searchRes.body);
+        final firstFilmLink = doc.querySelector('ul.results li a[href*="/film/"], a[href*="/film/"]');
+        final href = firstFilmLink?.attributes['href'];
+        if (href != null && href.contains('/film/')) {
+          final foundSlug = href.split('/film/').last.replaceAll('/', '').trim();
+          if (foundSlug.isNotEmpty) {
+            return 'https://letterboxd.com/film/$foundSlug/';
+          }
+        }
+      }
+    } catch (_) {}
+
+    return 'https://letterboxd.com/film/$slugFromTitle/';
+  }
+
   /// Fetches Letterboxd RSS items for [username]
   static Future<List<LetterboxdItem>> fetchUserRss(String username) async {
     final cleanUser = username.trim().toLowerCase();
     if (cleanUser.isEmpty) return [];
 
-    final url = Uri.parse('https://letterboxd.com/$cleanUser/rss/');
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final url = Uri.parse('https://letterboxd.com/$cleanUser/rss/?_cb=$timestamp');
     try {
-      final response = await http.get(url, headers: {'User-Agent': _defaultUserAgent});
+      final response = await http.get(
+        url,
+        headers: {
+          'User-Agent': _defaultUserAgent,
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+        },
+      );
       if (response.statusCode != 200) return [];
 
       final document = xml.XmlDocument.parse(response.body);

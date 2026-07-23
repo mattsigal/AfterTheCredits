@@ -23,7 +23,7 @@ class AppUpdateInfo {
 }
 
 class UpdateService {
-  static const String currentVersion = '1.1.0';
+  static const String currentVersion = '1.1.1';
   static const String githubRepo = 'mattsigal/AfterTheCredits';
   static const String latestReleaseUrl =
       'https://api.github.com/repos/$githubRepo/releases/latest';
@@ -93,9 +93,14 @@ class UpdateService {
 
   /// Opens specified URL in OS browser
   static Future<void> openReleasePage(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
+    try {
+      final uri = Uri.parse(url);
       await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      try {
+        final uri = Uri.parse(url);
+        await launchUrl(uri, mode: LaunchMode.platformDefault);
+      } catch (_) {}
     }
   }
 }

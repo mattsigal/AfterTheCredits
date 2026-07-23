@@ -53,6 +53,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
+        titlePadding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
         title: Row(
           children: [
             Icon(
@@ -60,7 +61,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
               color: info.isUpdateAvailable ? const Color(0xFF00E676) : Colors.grey,
             ),
             const SizedBox(width: 8),
-            Text(info.isUpdateAvailable ? 'Update Available!' : 'Up to Date'),
+            Expanded(
+              child: Text(info.isUpdateAvailable ? 'Update Available!' : 'Up to Date'),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close, color: Colors.grey, size: 20),
+              onPressed: () => Navigator.of(ctx).pop(),
+            ),
           ],
         ),
         content: Column(
@@ -87,39 +94,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   style: TextStyle(fontSize: 12, color: Colors.amber),
                 ),
               ),
-            if (isAndroid && info.apkDownloadUrl != null)
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF00E676).withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Text(
-                  'Android APK found! Tap below to download and update.',
-                  style: TextStyle(fontSize: 12, color: Color(0xFF00E676), fontWeight: FontWeight.bold),
-                ),
-              ),
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Dismiss'),
-          ),
-          if (isAndroid && info.apkDownloadUrl != null)
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF00E676),
-                foregroundColor: Colors.black,
-              ),
-              icon: const Icon(Icons.download),
-              label: const Text('Download APK'),
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                UpdateService.openReleasePage(info.apkDownloadUrl!);
-              },
-            ),
           ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00E676),
+              foregroundColor: Colors.black,
+            ),
             icon: const Icon(Icons.open_in_new, size: 16),
             label: const Text('GitHub Release'),
             onPressed: () {

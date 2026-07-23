@@ -127,6 +127,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
       context: context,
       builder: (_) => LetterboxdLogDialog(
         filmTitle: title,
+        filmYear: _movie?.releaseDate,
         posterUrl: poster,
         existingItem: widget.existingLetterboxdItem,
       ),
@@ -134,6 +135,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
 
     if (result == true && mounted) {
       provider.refreshRecentlyWatched();
+      Navigator.of(context).popUntil((route) => route.isFirst);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -345,37 +347,39 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                                   },
                                 ),
                               ),
-                              if (_movie!.imdbUrl != null)
-                                OutlinedButton.icon(
-                                  icon: const Icon(Icons.movie_creation, size: 16),
-                                  label: const Text('IMDb'),
-                                  onPressed: () => _launchUrlStr(_movie!.imdbUrl),
-                                ),
+                               OutlinedButton.icon(
+                                 icon: const Icon(Icons.movie_creation, size: 16),
+                                 label: const Text('IMDb'),
+                                 onPressed: () {
+                                   final url = (_movie?.imdbUrl != null && _movie!.imdbUrl!.contains('imdb.com/title/'))
+                                       ? _movie!.imdbUrl!
+                                       : 'https://www.imdb.com/find/?q=${Uri.encodeComponent(displayTitle)}';
+                                   _launchUrlStr(url);
+                                 },
+                               ),
                             ],
                           ),
                         ),
                       ),
                       const SizedBox(height: 14),
 
-                      // Centered Send / Update Letterboxd Rating Button
-                      Center(
-                        child: ElevatedButton.icon(
-                          icon: const Icon(Icons.rate_review, size: 18),
-                          label: Text(
-                            widget.existingLetterboxdItem != null
-                                ? 'Update Letterboxd Entry'
-                                : 'Send Letterboxd Rating',
+                      // Update Letterboxd Rating Button (only for items with existing Letterboxd activity)
+                      if (widget.existingLetterboxdItem != null) ...[
+                        Center(
+                          child: ElevatedButton.icon(
+                            icon: const Icon(Icons.rate_review, size: 18),
+                            label: const Text('Update Letterboxd Entry'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF00E676),
+                              foregroundColor: Colors.black,
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                            ),
+                            onPressed: _showLetterboxdLogDialog,
                           ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF00E676),
-                            foregroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                          ),
-                          onPressed: _showLetterboxdLogDialog,
                         ),
-                      ),
-                      const SizedBox(height: 20),
+                        const SizedBox(height: 20),
+                      ],
 
                       // Starring Container
                       if (_movie!.starring != null) ...[
@@ -472,9 +476,11 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                         ),
                       const SizedBox(height: 20),
 
-                      // 3. Letterboxd Review & Rating Summary Card
-                      _buildLetterboxdSummaryCard(),
-                      const SizedBox(height: 30),
+                      // 3. Letterboxd Review & Rating Summary Card (only for existing Letterboxd items)
+                      if (widget.existingLetterboxdItem != null) ...[
+                        _buildLetterboxdSummaryCard(),
+                        const SizedBox(height: 30),
+                      ],
                     ],
                   ),
                 ),

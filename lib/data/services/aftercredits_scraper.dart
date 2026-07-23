@@ -153,10 +153,16 @@ class AfterCreditsScraper {
       for (final a in links) {
         final text = a.text.toLowerCase();
         final href = a.attributes['href'];
+        if (href == null) continue;
+
         if (text.contains('official site') || text.contains('official website')) {
           officialSiteUrl = href;
-        } else if (text.contains('imdb') || (href != null && href.contains('imdb.com'))) {
+        } else if (imdbUrl == null && href.contains('imdb.com/title/')) {
           imdbUrl = href;
+        } else if (imdbUrl == null && text.contains('imdb') && !href.contains('imdb.com/name/')) {
+          if (href.contains('imdb.com/title/') || href.contains('/title/tt')) {
+            imdbUrl = href;
+          }
         }
       }
 

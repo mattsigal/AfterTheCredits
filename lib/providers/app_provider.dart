@@ -222,10 +222,39 @@ class AppProvider with ChangeNotifier {
     _isLoadingRss = false;
     notifyListeners();
 
+    await _autoRemoveWatchedFromUpcoming();
+
     LetterboxdService.resolveAfterCreditsStatusForItems(
       _recentlyWatched,
       onUpdate: () => notifyListeners(),
     );
+  }
+
+  Future<void> _autoRemoveWatchedFromUpcoming() async {
+    if (_recentlyWatched.isEmpty || _upcomingMovies.isEmpty) return;
+
+    String normalize(String title) {
+      var clean = title.replaceAll(RegExp(r'\s*\(\d{4}\)\s*'), ' ').replaceAll('*', '').trim().toLowerCase();
+      return clean.replaceAll(RegExp(r'[^a-z0-9]+'), '');
+    }
+
+    final watchedNormalized = _recentlyWatched.map((w) => normalize(w.filmTitle)).toSet();
+    final toDelete = <int>[];
+
+    for (final upcoming in _upcomingMovies) {
+      if (upcoming.id == null) continue;
+      final upcomingNorm = normalize(upcoming.movieTitle);
+      if (watchedNormalized.contains(upcomingNorm)) {
+        toDelete.add(upcoming.id!);
+      }
+    }
+
+    if (toDelete.isNotEmpty) {
+      for (final id in toDelete) {
+        await DatabaseHelper.instance.deleteUpcomingMovie(id);
+      }
+      await loadUpcomingMovies();
+    }
   }
 
   Future<void> search(String query) async {
