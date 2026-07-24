@@ -308,8 +308,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 color: Theme.of(context).cardColor,
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                  color: const Color(0xFF00E676).withValues(alpha: 0.6),
-                  width: 2,
+                  color: Colors.black,
+                  width: 2.5,
                 ),
               ),
               child: Column(

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -56,7 +57,7 @@ class _LetterboxdLogDialogState extends State<LetterboxdLogDialog> {
 
     final provider = Provider.of<AppProvider>(context, listen: false);
     final username = provider.letterboxdUsername.trim().toLowerCase();
-    final userDiaryUrl = username.isNotEmpty
+    final userHomeUrl = username.isNotEmpty
         ? 'https://letterboxd.com/$username/diary/'
         : 'https://letterboxd.com/';
 
@@ -77,7 +78,7 @@ class _LetterboxdLogDialogState extends State<LetterboxdLogDialog> {
 
     final initialUrl = (widget.existingItem?.link != null && widget.existingItem!.link.isNotEmpty)
         ? widget.existingItem!.link
-        : (slug.isNotEmpty ? 'https://letterboxd.com/film/$slug/' : userDiaryUrl);
+        : (slug.isNotEmpty ? 'https://letterboxd.com/film/$slug/' : userHomeUrl);
 
     debugPrint('[LetterboxdLogDialog] rawTitle: "$rawTitle", yearStr: "$yearStr", computedSlug: "$slug"');
     debugPrint('[LetterboxdLogDialog] Initial URL: $initialUrl');
@@ -86,6 +87,9 @@ class _LetterboxdLogDialogState extends State<LetterboxdLogDialog> {
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setUserAgent(
           'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36')
+      ..setOnConsoleMessage((JavaScriptConsoleMessage message) {
+        debugPrint('[LetterboxdJS] ${message.message}');
+      })
       ..addJavaScriptChannel(
         'LetterboxdSaveChannel',
         onMessageReceived: (JavaScriptMessage message) {
@@ -109,6 +113,11 @@ class _LetterboxdLogDialogState extends State<LetterboxdLogDialog> {
       )
       ..setNavigationDelegate(
         NavigationDelegate(
+          onProgress: (progress) {
+            if (progress > 40) {
+              _injectRefinements();
+            }
+          },
           onPageStarted: (url) {
             debugPrint('[LetterboxdLogDialog] Page Started: $url');
             if (mounted) setState(() => _isLoading = true);
@@ -125,6 +134,14 @@ class _LetterboxdLogDialogState extends State<LetterboxdLogDialog> {
         ),
       )
       ..loadRequest(Uri.parse(initialUrl));
+
+    Timer.periodic(const Duration(milliseconds: 600), (timer) {
+      if (!mounted || _hasFinishedSaveOrCancel) {
+        timer.cancel();
+        return;
+      }
+      _injectRefinements();
+    });
 
     if (widget.filmTitle.isNotEmpty && (widget.existingItem?.link == null || widget.existingItem!.link.isEmpty)) {
       _resolveAndNavigateExactUrl();
@@ -147,14 +164,24 @@ class _LetterboxdLogDialogState extends State<LetterboxdLogDialog> {
   }
 
   Future<void> _injectRefinements() async {
-    const jsCode = '''
+    const jsCode = r'''
       (function() {
         if (window.__lbxdSaved) return;
+
+        if (sessionStorage.getItem('__lbxdSubmitted') === 'true') {
+          sessionStorage.removeItem('__lbxdSubmitted');
+          console.log('[LetterboxdJS] Save successful, closing dialog');
+          if (window.LetterboxdSaveChannel) {
+            window.LetterboxdSaveChannel.postMessage('saved');
+          }
+          return;
+        }
+
+        console.log('[LetterboxdJS] Injected refinements loaded');
 
         document.cookie = "useMobileSite=no; path=/; domain=.letterboxd.com";
         document.cookie = "useMobileSite=no; path=/; domain=letterboxd.com";
 
-        // Clean CSS hiding site chrome while preserving React DOM flow
         let style = document.getElementById('letterboxd-custom-cleaner');
         if (!style) {
           style = document.createElement('style');
@@ -162,86 +189,54 @@ class _LetterboxdLogDialogState extends State<LetterboxdLogDialog> {
           document.head.appendChild(style);
         }
         style.innerHTML = `
-          #header, footer, #footer, .site-header, .site-header-bg, .site-footer, 
-          .banner-ad, .ad, .sidebar, .col-sidebar, .sub-nav, .navigation,
-          .js-hide-in-app, #signin, .header-signin-form, .cols-2, .col-main,
-          .viewing-poster-container, .section, .film-header, .film-poster,
-          #content > :not(#diary-entry-form-modal):not(.diary-entry-form-modal) {
-            display: none !important;
+          #header, .site-header {
+            height: 0 !important;
+            min-height: 0 !important;
+            max-height: 0 !important;
+            overflow: hidden !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
           }
 
-          html, body, #content, .content-wrap, main.site-body {
+          iframe, #footer, footer, .site-footer, .banner-ad, .ad, .google-ad, 
+          [class*="ad-container"], [id*="ad-container"], [class*="banner-ad"],
+          .anchor-ad, #anchor-ad, .intergient-ad, [id*="intergient"], [class*="intergient"],
+          [id*="google_ads_iframe"], div[id*="google_ads_iframe"], .adbox, .ad-space,
+          .ad-banner, .site-footer-ad, .widget-ad, .ad-unit, [id*="ad-wrapper"],
+          .advertisement, .commercial, .playwire-ad {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+            height: 0 !important;
+            width: 0 !important;
+            pointer-events: none !important;
+          }
+
+          .rateit-reset, .remove-rating {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+            width: 0 !important;
+            height: 0 !important;
+            pointer-events: none !important;
+          }
+
+          .rateit {
+            transform: scale(1.35) !important;
+            transform-origin: left center !important;
+            margin-right: 20px !important;
+          }
+
+          html, body {
             background-color: #283038 !important;
             color: #ffffff !important;
             padding: 0 !important;
             margin: 0 !important;
-            overflow: hidden !important;
-          }
-
-          .modal-backdrop {
-            display: none !important;
-          }
-
-          #diary-entry-form-modal, .modal.in, .modal.show, .diary-entry-form-modal {
-            display: block !important;
-            opacity: 1 !important;
-            position: absolute !important;
-            top: 0 !important;
-            left: 0 !important;
-            width: 100% !important;
-            min-height: 100% !important;
-            margin: 0 !important;
-            z-index: 999999 !important;
-            background: #283038 !important;
-            box-shadow: none !important;
-          }
-
-          .modal-dialog {
-            margin: 0 !important;
-            max-width: 100% !important;
-            width: 100% !important;
-            padding: 0 !important;
-          }
-
-          .modal-content {
-            background: #283038 !important;
-            border: none !important;
-            box-shadow: none !important;
-            border-radius: 0 !important;
-            padding: 4px !important;
-          }
-
-          .modal-header {
-            border-bottom: 1px solid #37434f !important;
-            padding: 12px 16px !important;
-          }
-
-          .modal-title {
-            color: #00E676 !important;
-            font-size: 18px !important;
-            font-weight: bold !important;
-          }
-
-          .modal-body {
-            padding: 12px 16px !important;
-          }
-
-          .modal-footer {
-            display: block !important;
-            border-top: 1px solid #37434f !important;
-            padding: 12px 16px !important;
-            margin-bottom: 28px !important;
-          }
-
-          .button-green, .button-neue.-primary, button[data-js-trigger="submit"] {
-            background-color: #00E676 !important;
-            color: #000000 !important;
-            font-weight: bold !important;
-            border: none !important;
           }
         `;
 
-        // Intercept close button / dismiss clicks inside the web modal to close Flutter dialog
         if (!window.__lbxdCloseIntercepted) {
           window.__lbxdCloseIntercepted = true;
           document.addEventListener('click', function(e) {
@@ -260,32 +255,17 @@ class _LetterboxdLogDialogState extends State<LetterboxdLogDialog> {
           }, true);
         }
 
-        // Intercept Save button clicks directly to dismiss outer Flutter container dialog
-        if (!window.__lbxdSaveClickIntercepted) {
-          window.__lbxdSaveClickIntercepted = true;
-          document.addEventListener('click', function(e) {
-            let el = e.target;
-            while (el && el !== document.body) {
-              const text = (el.textContent || '').trim().toLowerCase();
-              const isSave = el.type === 'submit' ||
-                (el.classList && (el.classList.contains('button-green') || el.classList.contains('js-extend-button'))) ||
-                (text === 'save' || text.startsWith('save '));
-
-              if (isSave) {
-                window.__lbxdSaved = true;
-                setTimeout(function() {
-                  if (window.LetterboxdSaveChannel) {
-                    window.LetterboxdSaveChannel.postMessage('saved');
-                  }
-                }, 400);
-                break;
-              }
-              el = el.parentElement;
+        if (!window.__lbxdSubmitIntercepted) {
+          window.__lbxdSubmitIntercepted = true;
+          document.addEventListener('submit', function(e) {
+            const form = e.target;
+            if (form && (form.id === 'diary-entry-form' || form.classList.contains('diary-entry-form') || form.action.includes('save') || form.closest('#diary-entry-form-modal'))) {
+              console.log('[LetterboxdJS] Diary/Review form submit intercepted, setting sessionStorage');
+              sessionStorage.setItem('__lbxdSubmitted', 'true');
             }
           }, true);
         }
 
-        // Intercept XHR / Fetch POST saves, button clicks & Form Submits to notify Flutter and pop dialog
         if (!window.__lbxdClickIntercepted) {
           window.__lbxdClickIntercepted = true;
 
@@ -293,37 +273,23 @@ class _LetterboxdLogDialogState extends State<LetterboxdLogDialog> {
             if (window.__lbxdSavedSent) return;
             window.__lbxdSavedSent = true;
             window.__lbxdSaved = true;
+            console.log('[LetterboxdJS] Sending saved message to Flutter');
             if (window.LetterboxdSaveChannel) {
               window.LetterboxdSaveChannel.postMessage('saved');
             }
           };
 
-          document.addEventListener('click', function(e) {
-            let el = e.target;
-            while (el && el !== document.body) {
-              const text = (el.textContent || el.value || '').trim().toLowerCase();
-              const inModal = el.closest('#diary-entry-form-modal, .diary-entry-form-modal, form.diary-entry-form, form[action*="save"]');
-
-              const isSaveButton = (inModal && (
-                el.type === 'submit' ||
-                text === 'save' ||
-                text.startsWith('save ') ||
-                el.classList.contains('js-save-diary-entry')
-              ));
-
-              if (isSaveButton) {
-                window.__userClickedSave = true;
-                setTimeout(notifySaved, 650);
-                break;
-              }
-              el = el.parentElement;
-            }
-          }, true);
-
           const origOpen = XMLHttpRequest.prototype.open;
           XMLHttpRequest.prototype.open = function(method, url) {
+            const isSaveEndpoint = url && (
+              url.includes('save-diary-entry') || 
+              url.includes('save-film-entry') || 
+              url.includes('production-log-entries') ||
+              url.includes('save')
+            );
             this.addEventListener('load', function() {
-              if (window.__userClickedSave) {
+              console.log('[LetterboxdJS] XHR Load: ' + url + ' Status: ' + this.status);
+              if (isSaveEndpoint) {
                 if (this.status === 200 || this.status === 201 || this.status === 302) {
                   notifySaved();
                 }
@@ -334,111 +300,119 @@ class _LetterboxdLogDialogState extends State<LetterboxdLogDialog> {
 
           const origFetch = window.fetch;
           window.fetch = async function() {
+            const url = arguments[0] ? (typeof arguments[0] === 'string' ? arguments[0] : arguments[0].url) : '';
+            const isSaveEndpoint = url && (
+              url.includes('save-diary-entry') || 
+              url.includes('save-film-entry') || 
+              url.includes('production-log-entries') ||
+              url.includes('save')
+            );
             const res = await origFetch.apply(this, arguments);
-            if (window.__userClickedSave) {
+            console.log('[LetterboxdJS] Fetch Res: ' + url + ' Status: ' + res.status);
+            if (isSaveEndpoint) {
               if (res.status === 200 || res.status === 201 || res.status === 302) {
                 notifySaved();
               }
             }
             return res;
           };
-
-          document.addEventListener('submit', function(e) {
-            const form = e.target;
-            if (form && (form.id.includes('diary') || form.action.includes('save') || form.closest('#diary-entry-form-modal'))) {
-              window.__userClickedSave = true;
-              setTimeout(notifySaved, 400);
-            }
-          }, true);
         }
 
-        // Trigger EditLogEntry or AddLogEntry after React component hydration finishes
         let hasClickedEdit = false;
         const triggerEdit = () => {
-          if (window.__lbxdSaved) return;
+          if (window.__lbxdSaved || hasClickedEdit) return;
 
           const modal = document.querySelector('#diary-entry-form-modal, .diary-entry-form-modal');
-          if (modal) {
-            // Check if review area or compose wizard step is visible
-            const composeSection = modal.querySelector('section[data-js-wizard-step="compose"], .diary-entry-form-wizard-step.-compose');
-            const textarea = modal.querySelector('textarea');
-            const isReviewFieldVisible = (composeSection && !composeSection.hasAttribute('hidden') && composeSection.offsetHeight > 40) ||
-                                         (textarea && textarea.offsetHeight > 30);
+          const isModalVisible = modal && (
+            modal.classList.contains('in') ||
+            modal.classList.contains('show') ||
+            modal.classList.contains('visible') ||
+            modal.classList.contains('active')
+          );
 
-            if (isReviewFieldVisible) {
-              hasClickedEdit = true;
-              return;
-            }
-
-            // If modal is open but on Step 1 ("Add to your films"), trigger "Specify date or add review..." or Next
+          if (isModalVisible) {
+            hasClickedEdit = true;
+            console.log('[LetterboxdJS] Modal is open and visible, stopping poller');
             const nextOrReviewBtn = modal.querySelector('[data-js-trigger="next"], [data-js-trigger="review"], .js-wizard-next, .js-show-review, a[href*="#review"], a.option-review');
             if (nextOrReviewBtn) {
+              console.log('[LetterboxdJS] Clicking next/review wizard step');
               nextOrReviewBtn.click();
-              hasClickedEdit = true;
-              return;
             }
-
-            const allModalLinks = Array.from(modal.querySelectorAll('a, button, span'));
-            const reviewToggle = allModalLinks.find(el => {
-              const txt = (el.textContent || '').trim().toLowerCase();
-              return txt.includes('specify date') || txt.includes('add review') || txt.includes('add a review') || txt.includes('write a review');
-            });
-            if (reviewToggle) {
-              const btn = reviewToggle.closest('button') || reviewToggle.closest('a') || reviewToggle;
-              btn.click();
-              hasClickedEdit = true;
-              return;
-            }
-          }
-
-          if (hasClickedEdit) return;
-
-          const logClassWrappers = document.querySelectorAll('[data-component-class="EditLogEntry"], [data-component-class="AddLogEntry"], [data-component-class="LogFilm"]');
-          for (let wrapper of logClassWrappers) {
-            const btn = wrapper.querySelector('button') || wrapper.querySelector('a');
-            if (btn) {
-              hasClickedEdit = true;
-              btn.click();
-              return;
-            }
-          }
-
-          const actionLinks = document.querySelectorAll('a.add-film-link, a.log-entry-button, a[href*="/log/"], .js-open-diary-entry-modal, .js-add-film-button');
-          if (actionLinks.length > 0) {
-            hasClickedEdit = true;
-            actionLinks[0].click();
             return;
           }
 
-          const allLabels = Array.from(document.querySelectorAll('span.label, button, a, div'));
-          const target = allLabels.find(el => {
-            const txt = (el.textContent || '').trim().toLowerCase();
-            return txt.includes('edit entry or add review') ||
-                   txt.includes('log, rate, or add') ||
-                   txt.includes('log or review') ||
-                   txt.includes('log film') ||
-                   txt.includes('log this film') ||
-                   txt.includes('add to your films') ||
-                   txt === 'log' || txt === 'review';
-          });
+          if (window.__lbxdIsNew) {
+            if (window.jQuery) {
+              const $btn = window.jQuery('#add-new-button, .button-add, a.add-film-link, .js-open-diary-entry-modal, .js-add-film-button, a.nav-account-log');
+              if ($btn.length > 0) {
+                console.log('[LetterboxdJS] Triggering jQuery click on Add Film header button');
+                hasClickedEdit = true;
+                $btn.first().trigger('click');
+                return;
+              }
+            }
+            const btn = document.querySelector('#add-new-button, .button-add, a.add-film-link, .js-open-diary-entry-modal, .js-add-film-button, a.nav-account-log');
+            if (btn) {
+              console.log('[LetterboxdJS] Triggering native DOM click on Add Film header button');
+              hasClickedEdit = true;
+              btn.click();
+            }
+          } else {
+            const selectors = [
+              'a[href*="/edit/"]',
+              'a[href*="edit-review"]',
+              '.js-edit-review',
+              '[data-component-class="EditLogEntry"] a',
+              '[data-component-class="AddLogEntry"] a',
+              '[data-component-class="LogFilm"] a',
+              'section.film-header-wrapper a[href*="/log/"]',
+              'a.log-entry-button',
+              '.js-open-diary-entry-modal:not(.button-add):not(#add-new-button)',
+              '#content a[href*="/log/"]',
+              '#content a[href*="#log"]'
+            ];
+            for (let sel of selectors) {
+              const el = document.querySelector(sel);
+              if (el && el.offsetHeight > 0) {
+                console.log('[LetterboxdJS] Triggering film page action selector: ' + sel);
+                hasClickedEdit = true;
+                el.click();
+                return;
+              }
+            }
 
-          if (target) {
-            hasClickedEdit = true;
-            const btn = target.closest('button') || target.closest('a') || target;
-            btn.click();
+            const candidates = Array.from(document.querySelectorAll('#content a, #content button, #content span.label'));
+            const logTarget = candidates.find(el => {
+              const txt = (el.textContent || '').trim().toLowerCase();
+              return txt.includes('edit entry') ||
+                     txt.includes('edit or delete review') ||
+                     txt.includes('edit review') ||
+                     txt.includes('edit or delete') ||
+                     txt.includes('rate or add') ||
+                     txt.includes('log or review') ||
+                     txt.includes('log this film') ||
+                     txt.includes('add to your films');
+            });
+            if (logTarget) {
+              console.log('[LetterboxdJS] Triggering film page text match: ' + (logTarget.textContent || '').trim());
+              hasClickedEdit = true;
+              const btn = logTarget.closest('button') || logTarget.closest('a') || logTarget;
+              btn.click();
+            }
           }
         };
 
         if (!window.__lbxdSaved) {
-          setTimeout(triggerEdit, 300);
-          setTimeout(triggerEdit, 700);
-          setTimeout(triggerEdit, 1200);
-          setTimeout(triggerEdit, 2000);
+          triggerEdit();
+          if (!window.__lbxdPoller) {
+            window.__lbxdPoller = setInterval(triggerEdit, 300);
+          }
         }
       })();
     ''';
 
     try {
+      await _webController.runJavaScript('window.__lbxdIsNew = ${widget.filmTitle.isEmpty};');
       await _webController.runJavaScript(jsCode);
     } catch (_) {}
   }

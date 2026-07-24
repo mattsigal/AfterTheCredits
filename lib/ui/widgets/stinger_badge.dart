@@ -83,7 +83,7 @@ class StingerPosterBorder extends StatelessWidget {
     } else if (duringCredits == false && afterCredits == false) {
       return const Color(0xFF00E676); // Green for NO stinger content
     }
-    return Colors.grey.shade700; // Grey for unknown/loading
+    return Colors.black; // Black for unknown/loading
   }
 
   @override
