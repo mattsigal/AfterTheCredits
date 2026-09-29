@@ -23,7 +23,7 @@ class AppUpdateInfo {
 }
 
 class UpdateService {
-  static const String currentVersion = '1.1.1';
+  static const String currentVersion = '1.2.0';
   static const String githubRepo = 'mattsigal/AfterTheCredits';
   static const String latestReleaseUrl =
       'https://api.github.com/repos/$githubRepo/releases/latest';
