@@ -12,6 +12,8 @@ import '../widgets/stinger_badge.dart';
 import 'settings_screen.dart';
 
 import '../../data/models/letterboxd_item.dart';
+import '../../data/models/upcoming_movie_model.dart';
+import '../../utils/ymd_date_localizations.dart';
 
 class MovieDetailScreen extends StatefulWidget {
   final String movieUrl;
@@ -77,6 +79,38 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
     }
   }
 
+  UpcomingMovieModel? _findMatchingUpcoming(AppProvider provider) {
+    String normalizeUrl(String url) {
+      return url
+          .trim()
+          .toLowerCase()
+          .replaceAll(RegExp(r'^https?://'), '')
+          .replaceAll(RegExp(r'/+$'), '');
+    }
+
+    String normalizeTitle(String text) {
+      return text
+          .replaceAll(RegExp(r'\s*\(\d{4}\)\s*'), ' ')
+          .replaceAll('*', '')
+          .trim()
+          .toLowerCase()
+          .replaceAll(RegExp(r'[^a-z0-9]+'), '');
+    }
+
+    final curUrl = normalizeUrl(widget.movieUrl);
+    final curTitle = normalizeTitle(_movie?.title ?? widget.initialTitle ?? '');
+
+    for (final upcoming in provider.upcomingMovies) {
+      if (curUrl.isNotEmpty && normalizeUrl(upcoming.movieUrl) == curUrl) {
+        return upcoming;
+      }
+      if (curTitle.isNotEmpty && normalizeTitle(upcoming.movieTitle) == curTitle) {
+        return upcoming;
+      }
+    }
+    return null;
+  }
+
   Future<void> _showLetterboxdLogDialog() async {
     final provider = Provider.of<AppProvider>(context, listen: false);
     if (!provider.isLetterboxdAuthenticated) {
@@ -134,7 +168,12 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
     );
 
     if (result == true && mounted) {
-      provider.refreshRecentlyWatched();
+      final matchingUpcoming = _findMatchingUpcoming(provider);
+      if (matchingUpcoming != null && matchingUpcoming.id != null) {
+        await provider.deleteUpcomingMovie(matchingUpcoming.id!);
+      }
+      await provider.refreshRecentlyWatched();
+      if (!mounted) return;
       Navigator.of(context).popUntil((route) => route.isFirst);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -158,6 +197,13 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
       initialDate: now,
       firstDate: now.subtract(const Duration(days: 1)),
       lastDate: now.add(const Duration(days: 365)),
+      builder: (context, child) {
+        return Localizations.override(
+          context: context,
+          delegates: const [YmdLocalizationsDelegate()],
+          child: child,
+        );
+      },
     );
 
     if (picked != null && mounted) {
@@ -206,12 +252,14 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final provider = Provider.of<AppProvider>(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cardBg = Theme.of(context).cardColor;
 
     final displayTitle = _movie?.displayTitle ??
         TitleFormatter.formatDisplayTitle(widget.initialTitle ?? 'Movie Details');
     final posterUrl = _movie?.posterUrl ?? widget.initialPosterUrl;
+    final matchingUpcoming = _findMatchingUpcoming(provider);
 
     return Scaffold(
       appBar: AppBar(
@@ -475,6 +523,35 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                           ),
                         ),
                       const SizedBox(height: 20),
+
+                      // Send to Letterboxd Button (when movie is in Upcoming Theatre visits)
+                      if (matchingUpcoming != null) ...[
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF00E676),
+                              foregroundColor: Colors.black,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              elevation: 2,
+                            ),
+                            icon: const Icon(Icons.send_rounded, size: 20),
+                            label: const Text(
+                              'Send to Letterboxd',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                            onPressed: _showLetterboxdLogDialog,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                      ],
 
                       // 3. Letterboxd Review & Rating Summary Card (only for existing Letterboxd items)
                       if (widget.existingLetterboxdItem != null) ...[

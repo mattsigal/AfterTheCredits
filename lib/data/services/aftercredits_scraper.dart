@@ -23,7 +23,7 @@ class AfterCreditsSearchResult {
 
 class AfterCreditsScraper {
   static const Map<String, String> _headers = {
-    'User-Agent': 'AfterTheCredits/1.2.0 (Android; Mobile)',
+    'User-Agent': 'AfterTheCredits/1.2.1 (Android; Mobile)',
     'Accept': 'application/json, text/html, */*',
   };
 
